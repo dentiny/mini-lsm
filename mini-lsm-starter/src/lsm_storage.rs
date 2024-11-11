@@ -30,7 +30,7 @@ const TOMBSTONE: &[u8] = b"";
 pub struct LsmStorageState {
     /// The current memtable.
     pub memtable: Arc<MemTable>,
-    /// Immutable memtables, from latest to earliest.
+    /// Immutable memtables, from earliest to latest.
     pub imm_memtables: Vec<Arc<MemTable>>,
     /// L0 SSTs, from latest to earliest.
     pub l0_sstables: Vec<usize>,
@@ -281,15 +281,25 @@ impl LsmStorageInner {
 
     /// Get a key from the storage. In day 7, this can be further optimized by using a bloom filter.
     pub fn get(&self, key: &[u8]) -> Result<Option<Bytes>> {
-        if let Some(value) = self.state.read().memtable.get(key) {
-            // Tomestone is represented as empty bytes.
-            if value.is_empty() {
+        let guard = self.state.read();
+
+        // Search in the active memtable.
+        if let Some(value) = guard.memtable.get(key) {
+            if value == TOMBSTONE {
                 return Ok(None);
             }
             return Ok(Some(value));
         }
 
-        // Key-value pair not found in memtable.
+        // Search on the immutable memtables.
+        for cur_memtable in guard.imm_memtables.iter() {
+            if let Some(value) = cur_memtable.get(key) {
+                if value == TOMBSTONE {
+                    return Ok(None);
+                }
+            }
+        }
+
         Ok(None)
     }
 
@@ -303,7 +313,15 @@ impl LsmStorageInner {
         assert!(!key.is_empty(), "Key cannot be empty");
         assert!(!value.is_empty(), "Value cannot be empty");
 
-        self.state.write().memtable.put(key, value)
+        let overall_size;
+        {
+            let state = self.state.write();
+            state.memtable.put(key, value)?;
+            overall_size = state.memtable.approximate_size();
+        }
+
+        // Already attempt freeze after a write operation.
+        self.attempt_freeze_memtable(overall_size)
     }
 
     /// Remove a key from the storage by writing an empty value.
@@ -331,9 +349,45 @@ impl LsmStorageInner {
         unimplemented!()
     }
 
-    /// Force freeze the current memtable to an immutable memtable
+    /// Force freeze the current memtable to an immutable memtable, meanwhile create a new memtable.
     pub fn force_freeze_memtable(&self, _state_lock_observer: &MutexGuard<'_, ()>) -> Result<()> {
-        unimplemented!()
+        let new_memtable_id = self.next_sst_id();
+        let new_memtable = Arc::new(MemTable::create(new_memtable_id));
+
+        {
+            let mut guard = self.state.write();
+            let mut snapshot = guard.as_ref().clone();
+            let old_memtable = std::mem::replace(
+                /*dest=*/ &mut snapshot.memtable,
+                /*src=*/ new_memtable,
+            );
+            snapshot.imm_memtables.insert(0, old_memtable);
+            *guard = Arc::new(snapshot)
+        }
+
+        Ok(())
+    }
+
+    /// Attempt to freeze current memtable, if reaches configured size threshold.
+    fn attempt_freeze_memtable(&self, approximate_size: usize) -> Result<()> {
+        if approximate_size < self.options.target_sst_size {
+            return Ok(());
+        }
+
+        let state_lock = self.state_lock.lock();
+        let guard = self.state.read();
+
+        // Double check to make sure we need to freeze.
+        // Without the check, it's possible to freeze in multiple threads.
+        let cur_memtable_size = guard.memtable.approximate_size();
+        if cur_memtable_size < self.options.target_sst_size {
+            return Ok(());
+        }
+
+        // Confirm we need to freeze current memtable.
+        // Explicit drop the lock and re-acquire in `force_freeze_memtable`, since creating a new memtable involves IO operations.
+        drop(guard);
+        self.force_freeze_memtable(&state_lock)
     }
 
     /// Force flush the earliest-created immutable memtable to disk

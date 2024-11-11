@@ -69,7 +69,6 @@ fn test_task2_storage_integration() {
 }
 
 #[test]
-#[ignore]
 fn test_task3_storage_integration() {
     let dir = tempdir().unwrap();
     let storage = Arc::new(
@@ -99,7 +98,6 @@ fn test_task3_storage_integration() {
 }
 
 #[test]
-#[ignore]
 fn test_task3_freeze_on_capacity() {
     let dir = tempdir().unwrap();
     let mut options = LsmStorageOptions::default_for_week1_test();
@@ -109,15 +107,22 @@ fn test_task3_freeze_on_capacity() {
     for _ in 0..1000 {
         storage.put(b"1", b"2333").unwrap();
     }
+    assert_eq!(&storage.get(b"1").unwrap().unwrap()[..], b"2333");
+
     let num_imm_memtables = storage.state.read().imm_memtables.len();
     assert!(num_imm_memtables >= 1, "no memtable frozen?");
     for _ in 0..1000 {
         storage.delete(b"1").unwrap();
     }
+    assert!(storage.get(b"1").unwrap().is_none());
+    storage
+        .force_freeze_memtable(&storage.state_lock.lock())
+        .unwrap();
     assert!(
         storage.state.read().imm_memtables.len() > num_imm_memtables,
         "no more memtable frozen?"
     );
+    assert!(storage.get(b"1").unwrap().is_none());
 }
 
 #[test]
