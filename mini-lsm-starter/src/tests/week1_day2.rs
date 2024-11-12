@@ -14,7 +14,6 @@ use crate::{
 use super::harness::{check_iter_result_by_key, expect_iter_error, MockIterator};
 
 #[test]
-#[ignore]
 fn test_task1_memtable_iter() {
     use std::ops::Bound;
     let memtable = MemTable::create(0);
@@ -65,7 +64,6 @@ fn test_task1_memtable_iter() {
 }
 
 #[test]
-#[ignore]
 fn test_task1_empty_memtable_iter() {
     use std::ops::Bound;
     let memtable = MemTable::create(0);
