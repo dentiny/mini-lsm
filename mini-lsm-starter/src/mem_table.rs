@@ -23,6 +23,9 @@ pub struct MemTable {
     map: Arc<SkipMap<Bytes, Bytes>>,
     wal: Option<Wal>,
     id: usize,
+    // Size is not accurate:
+    // 1. Relaxed memory ordering is used at read and write;
+    // 2. Putting key-value pairs for the same key accumuates size.
     approximate_size: Arc<AtomicUsize>,
 }
 
@@ -73,6 +76,7 @@ impl MemTable {
     }
 
     /// Get a value by key.
+    /// Tombstone for deletion is handled at `LsmStorageInner`.
     pub fn get(&self, key: &[u8]) -> Option<Bytes> {
         let key_bytes = Bytes::copy_from_slice(key);
         self.map

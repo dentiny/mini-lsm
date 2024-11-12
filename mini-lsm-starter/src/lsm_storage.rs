@@ -297,6 +297,7 @@ impl LsmStorageInner {
                 if value == TOMBSTONE {
                     return Ok(None);
                 }
+                return Ok(Some(value));
             }
         }
 
@@ -308,11 +309,8 @@ impl LsmStorageInner {
         unimplemented!()
     }
 
-    /// Put a key-value pair into the storage by writing into the current memtable.
-    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
-        assert!(!key.is_empty(), "Key cannot be empty");
-        assert!(!value.is_empty(), "Value cannot be empty");
-
+    /// Implementation for `put` operation, including `delete`.
+    fn put_impl(&self, key: &[u8], value: &[u8]) -> Result<()> {
         let overall_size;
         {
             let state = self.state.write();
@@ -324,9 +322,17 @@ impl LsmStorageInner {
         self.attempt_freeze_memtable(overall_size)
     }
 
+    /// Put a key-value pair into the storage by writing into the current memtable.
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<()> {
+        assert!(!key.is_empty(), "Key cannot be empty");
+        assert!(!value.is_empty(), "Value cannot be empty");
+        self.put_impl(key, value)
+    }
+
     /// Remove a key from the storage by writing an empty value.
     pub fn delete(&self, key: &[u8]) -> Result<()> {
-        self.state.write().memtable.put(key, TOMBSTONE)
+        assert!(!key.is_empty(), "Key cannot be empty");
+        self.put_impl(key, TOMBSTONE)
     }
 
     pub(crate) fn path_of_sst_static(path: impl AsRef<Path>, id: usize) -> PathBuf {
