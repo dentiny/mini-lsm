@@ -84,7 +84,6 @@ fn test_task1_empty_memtable_iter() {
 }
 
 #[test]
-#[ignore]
 fn test_task2_merge_1() {
     let i1 = MockIterator::new(vec![
         (Bytes::from("a"), Bytes::from("1.1")),
@@ -136,7 +135,6 @@ fn test_task2_merge_1() {
 }
 
 #[test]
-#[ignore]
 fn test_task2_merge_2() {
     let i1 = MockIterator::new(vec![
         (Bytes::from("a"), Bytes::from("1.1")),
@@ -192,7 +190,6 @@ fn test_task2_merge_2() {
 }
 
 #[test]
-#[ignore]
 fn test_task2_merge_empty() {
     let mut iter = MergeIterator::<MockIterator>::create(vec![]);
     check_iter_result_by_key(&mut iter, vec![]);
@@ -215,7 +212,6 @@ fn test_task2_merge_empty() {
 }
 
 #[test]
-#[ignore]
 fn test_task2_merge_error() {
     let mut iter = MergeIterator::<MockIterator>::create(vec![]);
     check_iter_result_by_key(&mut iter, vec![]);
